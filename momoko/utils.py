@@ -84,7 +84,14 @@ class BatchQuery(object):
              resulting cursors as values is passed on to the callback.
     """
     def __init__(self, db, queries, callback):
+        from clients import AdispClient
         self._db = db
+
+        if isinstance(self._db, AdispClient):
+            self.execute = super(AdispClient, self._db).execute
+        else:
+            self.execute = self._db.execute
+
         self._callback = callback
         self._queries = {}
         self._args = {}
@@ -97,7 +104,7 @@ class BatchQuery(object):
             self._queries[key] = query
 
         for query in list(self._queries.values()):
-            self._db.execute(*query)
+            self.execute(*query)
 
     def _collect(self, key, cursor):
         self._size = self._size - 1
