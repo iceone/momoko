@@ -27,7 +27,8 @@ class DbQueueTestCase(AsyncTestCase):
             'min_conn': settings.min_conn,
             'max_conn': settings.max_conn,
             'cleanup_timeout': settings.cleanup_timeout,
-            'ioloop': self.io_loop
+            'ioloop': self.io_loop,
+            'client_encoding': 'utf-8'
         })
 
         self.db_queue = DbQueryQueue(self.db, self.io_loop, poll_timeout=0.2, queue_length=2,
@@ -41,6 +42,9 @@ class DbQueueTestCase(AsyncTestCase):
     def test_format_sql(self):
         sql = self.db_queue.format_sql('SELECT %s, %s', (1, 2))
         self.assertEqual(sql, 'SELECT 1, 2')
+
+        sql = self.db_queue.format_sql('SELECT %s', (u'привет', ))
+        self.assertEqual(sql, "SELECT 'привет'")
 
         sql = self.db_queue.format_sql('SELECT %(one)s, %(two)s', {'one': 1, 'two': 2})
         self.assertEqual(sql, 'SELECT 1, 2')

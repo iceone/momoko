@@ -6,8 +6,11 @@ import functools
 from momoko.clients import AdispClient, AsyncClient
 import uuid
 from collections import OrderedDict
+import psycopg2
 from psycopg2.extensions import adapt
 from tornado import gen
+
+psycopg2.extensions.register_type(psycopg2.extensions.UNICODE)
 
 class DbQueryQueue(object):
 
@@ -55,11 +58,15 @@ class DbQueryQueue(object):
             if isinstance(params, dict):
                 adapted = {}
                 for k in params.keys():
+                    if isinstance(params[k], unicode):
+                        params[k] = params[k].encode('utf-8')
                     adapted[k] = adapt(params[k]).getquoted()
                 sql = sql_tmpl % adapted
             elif isinstance(params, (list, tuple)):
                 adapted = []
                 for p in params:
+                    if isinstance(p, unicode):
+                        p = p.encode('utf-8')
                     adapted.append(adapt(p).getquoted())
                 adapted = tuple(adapted)
             sql = sql_tmpl % adapted
