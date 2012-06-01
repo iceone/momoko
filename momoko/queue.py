@@ -36,6 +36,7 @@ class DbQueryQueue(object):
         self.noresult_queue_dumper = PeriodicCallback(self.noresult_timeout_check, self.noresult_poll_timeout * 1000, io_loop=self.ioloop)
         self.noresult_queue_length = noresult_queue_length
         self.noresult_last_time = None
+        self.periodic_purge = PeriodicCallback(self.purge_expired, 30 * 1000, io_loop=self.ioloop)
 
     def start(self):
         '''
@@ -43,6 +44,7 @@ class DbQueryQueue(object):
         '''
         self.noresult_last_time = time.time()
         self.noresult_queue_dumper.start()
+        self.periodic_purge.start()
         self.queue_poll_handler = self.ioloop.add_timeout(time.time()+self.poll_timeout, self.poller)
 
     def stop(self):
@@ -50,6 +52,7 @@ class DbQueryQueue(object):
         Stop queue polling
         '''
         self.noresult_queue_dumper.stop()
+        self.periodic_purge.stop()
         if self.queue_poll_handler:
             self.ioloop.remove_timeout(self.queue_poll_handler)
 
@@ -74,17 +77,18 @@ class DbQueryQueue(object):
             sql = sql_tmpl
         return sql
 
-    def fetchone(self, sql_tmpl, params=None, callback=None):
-        self.execute(sql_tmpl, params, command='fetchone', callback=callback)
+    def fetchone(self, sql_tmpl, params=None, callback=None, timeout=5*60):
+        self.execute(sql_tmpl, params, command='fetchone', callback=callback, timeout=timeout)
 
-    def fetchall(self, sql_tmpl, params=None, callback=None):
-        self.execute(sql_tmpl, params, command='fetchall', callback=callback)
+    def fetchall(self, sql_tmpl, params=None, callback=None, timeout=5*60):
+        self.execute(sql_tmpl, params, command='fetchall', callback=callback, timeout=timeout)
 
-    def execute(self, sql_tmpl, params=None, command='', callback=None):
+    def execute(self, sql_tmpl, params=None, command='', callback=None, timeout=5*60):
         assert command in ('fetchall', 'fetchone')
         sql = self.format_sql(sql_tmpl, params)
         key = str(uuid.uuid4())
-        self.queue[key] = ((sql, callback, key, command))
+        expires_at = time.time() + timeout
+        self.queue[key] = (sql, callback, key, command, expires_at)
 
     @gen.engine
     def poller(self):
@@ -101,14 +105,14 @@ class DbQueryQueue(object):
             return
 
         keys = []
-        for sql, callback, uid, command in self.temp_queries.values():
+        for sql, callback, uid, command, exp_at in self.temp_queries.values():
             keys.append(uid)
             self._execute(sql, callback=(yield gen.Callback(uid)))
 
         cursors = yield gen.WaitAll(keys)
 
         for uid, cursor in zip(keys, cursors):
-            _, callback, __, command = self.temp_queries.pop(uid)
+            sql, callback, uid, command, exp_at = self.temp_queries.pop(uid)
             try:
                 data = getattr(cursor, command)()
                 callback(data)
@@ -120,6 +124,18 @@ class DbQueryQueue(object):
             self.ioloop.add_callback(self.poller)
         else:
             self.queue_poll_handler = self.ioloop.add_timeout(time.time()+self.poll_timeout, self.poller)
+
+    def purge_expired(self):
+        cur_time = time.time()
+        new_queue = OrderedDict()
+        for k, v in self.queue.iteritems():
+            callback = v[1]
+            expires_at = v[4]
+            if cur_time > expires_at:
+                self.add_callback(functools.partial(callback, None))
+            else:
+                new_queue[k] = v
+        self.queue = new_queue
 
     def execute_noresult(self, sql_tmpl, params=None, callback=None):
         '''
