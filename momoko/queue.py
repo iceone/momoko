@@ -5,7 +5,10 @@ import time
 import functools
 from momoko.clients import AdispClient, AsyncClient
 import uuid
-from collections import OrderedDict
+try:
+    from collections import OrderedDict
+except ImportError:
+    from utils import OrderedDict
 import psycopg2
 from psycopg2.extensions import adapt
 from tornado import gen
