@@ -15,6 +15,7 @@ import functools
 import psycopg2
 import psycopg2.extensions
 from tornado.ioloop import IOLoop
+from UserDict import DictMixin
 
 
 class QueryChain(object):
