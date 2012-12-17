@@ -135,7 +135,7 @@ class DbQueryQueue(object):
             callback = v[1]
             expires_at = v[4]
             if cur_time > expires_at:
-                self.add_callback(functools.partial(callback, None))
+                self.ioloop.add_callback(functools.partial(callback, None))
             else:
                 new_queue[k] = v
         self.queue = new_queue
