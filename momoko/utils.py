@@ -130,16 +130,29 @@ class Poller(object):
         self._update_handler()
 
     def _update_handler(self):
-        state = self._connection.poll()
-        if state == psycopg2.extensions.POLL_OK:
-            for callback in self._callbacks:
-                callback()
-        elif state == psycopg2.extensions.POLL_READ:
-            self._ioloop.add_handler(self._connection.fileno(),
-                self._io_callback, IOLoop.READ)
-        elif state == psycopg2.extensions.POLL_WRITE:
-            self._ioloop.add_handler(self._connection.fileno(),
-                self._io_callback, IOLoop.WRITE)
+        try:
+            state = self._connection.poll()
+        except (psycopg2.Warning, psycopg2.Error) as error:
+            # When a DatabaseError is raised it means that the connection has been
+            # closed and polling it would raise an exception from then IOLoop.
+            if not isinstance(error, psycopg2.DatabaseError):
+                self._ioloop.update_handler(self._connection.fileno(), 0)
+
+            if self._callbacks:
+                for callback in self._callbacks:
+                    callback(error)
+        else:
+            if state == psycopg2.extensions.POLL_OK:
+                for callback in self._callbacks:
+                    callback()
+            elif state == psycopg2.extensions.POLL_READ:
+                self._ioloop.add_handler(self._connection.fileno(),
+                    self._io_callback, IOLoop.READ)
+            elif state == psycopg2.extensions.POLL_WRITE:
+                self._ioloop.add_handler(self._connection.fileno(),
+                    self._io_callback, IOLoop.WRITE)
+            else:
+                raise Exception('poll() returned {0}'.format(state))
 
     def _io_callback(self, *args):
         self._ioloop.remove_handler(self._connection.fileno())
