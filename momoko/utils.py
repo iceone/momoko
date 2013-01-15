@@ -140,7 +140,10 @@ class Poller(object):
 
             if self._callbacks:
                 for callback in self._callbacks:
-                    callback(error)
+                    try:
+                        callback(error)
+                    except Exception as e:
+                        print 'DBQUERY-POLLER:CALLBACK_ERROR:', e.message
         else:
             if state == psycopg2.extensions.POLL_OK:
                 for callback in self._callbacks:
